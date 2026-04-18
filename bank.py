@@ -5,7 +5,7 @@ from queue import Queue
 
 # Project constants
 NUM_TELLERS = 3
-NUM_CUSTOMERS = 50
+NUM_CUSTOMERS = 10
 
 # Bank opens only after all tellers are ready
 bank_open_event = threading.Event()
@@ -39,9 +39,12 @@ def safe_print(msg):
         print(msg, flush=True)
 
 
-def log(thread_type, thread_id, partner, msg):
-    """Format output to match the project style."""
-    safe_print(f"{thread_type} {thread_id} [{partner}]: {msg}")
+def log(thread_type, thread_id, partner, msg, colon=True):
+    """Format output to match the sample style."""
+    if colon:
+        safe_print(f"{thread_type} {thread_id} [{partner}]: {msg}")
+    else:
+        safe_print(f"{thread_type} {thread_id} [{partner}] {msg}")
 
 
 class Teller(threading.Thread):
@@ -72,14 +75,14 @@ class Teller(threading.Thread):
     def run(self):
         global teller_ready_count
 
-        # Teller announces readiness
-        log("Teller", self.teller_id, f"Teller {self.teller_id}", "ready to serve")
+        # Teller announces readiness and waits for a customer
+        log("Teller", self.teller_id, "", "ready to serve")
+        log("Teller", self.teller_id, "", "waiting for a customer")
 
         # Bank opens only when all tellers are ready
         with teller_ready_lock:
             teller_ready_count += 1
             if teller_ready_count == NUM_TELLERS:
-                safe_print("Bank is now open.")
                 bank_open_event.set()
 
         while True:
@@ -91,8 +94,7 @@ class Teller(threading.Thread):
             if self.stop_flag:
                 break
 
-            log("Teller", self.teller_id, f"Customer {self.customer_id}", "calls next customer")
-            log("Teller", self.teller_id, f"Customer {self.customer_id}", "waits for customer to approach")
+            log("Teller", self.teller_id, f"Customer {self.customer_id}", "serving a customer")
 
             # Let customer know teller is ready for introduction
             self.ready_for_intro.release()
@@ -104,46 +106,50 @@ class Teller(threading.Thread):
             log("Teller", self.teller_id, f"Customer {self.customer_id}", "asks for transaction")
             self.transaction_requested.release()
 
-            # Wait for customer to provide deposit or withdraw
+            # Wait for customer to provide deposit or withdrawal
             self.transaction_given.acquire()
-            log(
-                "Teller",
-                self.teller_id,
-                f"Customer {self.customer_id}",
-                f"receives {self.transaction_type} transaction"
-            )
 
-            # Withdrawals must go to the manager first
+            # Handle withdrawal requests through the manager first
             if self.transaction_type == "Withdraw":
-                log("Teller", self.teller_id, f"Customer {self.customer_id}", "going to manager")
+                log("Teller", self.teller_id, f"Customer {self.customer_id}", "handling withdrawal transaction")
+                log("Teller", self.teller_id, f"Customer {self.customer_id}", "going to the manager")
                 with manager_sem:
-                    log("Teller", self.teller_id, f"Customer {self.customer_id}", "talking to manager")
+                    log("Teller", self.teller_id, f"Customer {self.customer_id}", "getting manager's permission")
                     time.sleep(random.uniform(0.005, 0.03))
-                    log("Teller", self.teller_id, f"Customer {self.customer_id}", "done with manager")
+                    log("Teller", self.teller_id, f"Customer {self.customer_id}", "got manager's permission")
+            else:
+                log("Teller", self.teller_id, f"Customer {self.customer_id}", "handling deposit transaction")
 
-            # All transactions must go to the safe
+            # All transactions must go through the safe
             log("Teller", self.teller_id, f"Customer {self.customer_id}", "going to safe")
             with safe_sem:
-                log("Teller", self.teller_id, f"Customer {self.customer_id}", "using safe")
-                log("Teller", self.teller_id, f"Customer {self.customer_id}", "transaction in safe starts")
+                log("Teller", self.teller_id, f"Customer {self.customer_id}", "enter safe")
                 time.sleep(random.uniform(0.01, 0.05))
-                log("Teller", self.teller_id, f"Customer {self.customer_id}", "transaction in safe ends")
-            log("Teller", self.teller_id, f"Customer {self.customer_id}", "done with safe")
+                log("Teller", self.teller_id, f"Customer {self.customer_id}", "leaving safe")
 
-            # Tell customer the transaction is complete
-            log("Teller", self.teller_id, f"Customer {self.customer_id}", "transaction complete")
+            # Announce the transaction is finished
+            if self.transaction_type == "Withdraw":
+                log("Teller", self.teller_id, f"Customer {self.customer_id}", "finishes withdrawal transaction.")
+            else:
+                log("Teller", self.teller_id, f"Customer {self.customer_id}", "finishes deposit transaction.")
+
+            # Tell customer thread it may leave the teller now
+            log("Teller", self.teller_id, f"Customer {self.customer_id}", "wait for customer to leave.")
             self.transaction_complete.release()
 
             # Wait until the customer leaves the teller
             self.customer_left.acquire()
-            log("Teller", self.teller_id, f"Customer {self.customer_id}", "customer left teller")
             self.left_ack.release()
 
             # Reset teller-specific customer data
             self.customer_id = None
             self.transaction_type = None
 
-        log("Teller", self.teller_id, f"Teller {self.teller_id}", "done for the day")
+            # Teller becomes available again
+            log("Teller", self.teller_id, "", "ready to serve")
+            log("Teller", self.teller_id, "", "waiting for a customer")
+
+        log("Teller", self.teller_id, "", "leaving for the day")
 
 
 class Customer(threading.Thread):
@@ -157,24 +163,29 @@ class Customer(threading.Thread):
     def run(self):
         global customers_finished
 
-        log("Customer", self.customer_id, f"Customer {self.customer_id}", f"decides on {self.transaction}")
+        # Customer decides what type of transaction to perform
+        if self.transaction == "Withdraw":
+            log("Customer", self.customer_id, "", "wants to perform a withdrawal transaction")
+        else:
+            log("Customer", self.customer_id, "", "wants to perform a deposit transaction")
 
         # Simulate customer arriving at a random time
-        log("Customer", self.customer_id, f"Customer {self.customer_id}", "arrives at bank")
         time.sleep(random.uniform(0, 0.1))
-        log("Customer", self.customer_id, f"Customer {self.customer_id}", "waiting to enter bank")
 
         # Customer cannot enter before the bank is open
         bank_open_event.wait()
 
+        log("Customer", self.customer_id, "", "going to bank.")
+
         # Only 2 customers can pass through the door at the same time
         with door_sem:
-            log("Customer", self.customer_id, f"Customer {self.customer_id}", "enters bank")
-            log("Customer", self.customer_id, f"Customer {self.customer_id}", "gets in line")
+            log("Customer", self.customer_id, "", "entering bank.")
+            log("Customer", self.customer_id, "", "getting in line.")
 
             # Get a teller that is currently ready
             teller = available_tellers.get()
 
+            log("Customer", self.customer_id, "", "selecting a teller.")
             log("Customer", self.customer_id, f"Teller {teller.teller_id}", "selects teller")
 
             # Tell the teller this customer has arrived
@@ -183,28 +194,32 @@ class Customer(threading.Thread):
 
             # Wait until teller is ready before introducing self
             teller.ready_for_intro.acquire()
-            log("Customer", self.customer_id, f"Teller {teller.teller_id}", "introduces itself")
+            log("Customer", self.customer_id, f"Teller {teller.teller_id}", "introduces itself", colon=False)
             teller.customer_identified.release()
 
             # Wait for teller to ask for transaction
             teller.transaction_requested.acquire()
 
             # Give the transaction to the teller
-            log("Customer", self.customer_id, f"Teller {teller.teller_id}", f"tells transaction {self.transaction}")
+            if self.transaction == "Withdraw":
+                log("Customer", self.customer_id, f"Teller {teller.teller_id}", "asks for withdrawal transaction")
+            else:
+                log("Customer", self.customer_id, f"Teller {teller.teller_id}", "asks for deposit transaction")
+
             teller.transaction_type = self.transaction
             teller.transaction_given.release()
 
             # Wait until teller finishes the transaction
-            log("Customer", self.customer_id, f"Teller {teller.teller_id}", "waits for transaction to complete")
             teller.transaction_complete.acquire()
 
             # Leave teller after transaction is finished
-            log("Customer", self.customer_id, f"Teller {teller.teller_id}", "left teller")
+            log("Customer", self.customer_id, f"Teller {teller.teller_id}", "leaves teller")
             teller.customer_left.release()
 
             # Wait until teller confirms customer left
             teller.left_ack.acquire()
-            log("Customer", self.customer_id, f"Customer {self.customer_id}", "leaving the bank")
+            log("Customer", self.customer_id, "", "goes to door")
+            log("Customer", self.customer_id, "", "leaves the bank")
 
         # Count this customer as fully served
         with customers_finished_lock:
@@ -220,6 +235,9 @@ def main():
     for teller in tellers:
         teller.start()
 
+    # Wait until all tellers are ready and the bank is open
+    bank_open_event.wait()
+    
     # Start all customers
     for customer in customers:
         customer.start()
@@ -236,8 +254,7 @@ def main():
     for teller in tellers:
         teller.join()
 
-    safe_print("Bank is now closed.")
-    safe_print(f"Total customers served: {customers_finished}")
+    safe_print("The bank closes for the day.")
 
 
 if __name__ == "__main__":
