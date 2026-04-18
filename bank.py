@@ -5,7 +5,7 @@ from queue import Queue
 
 # Project constants
 NUM_TELLERS = 3
-NUM_CUSTOMERS = 10
+NUM_CUSTOMERS = 50
 
 # Bank opens only after all tellers are ready
 bank_open_event = threading.Event()
