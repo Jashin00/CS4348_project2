@@ -28,3 +28,6 @@ In this final session, I worked on the full simulation behavior and the resource
 I also added the random waiting times required by the project. Customers wait between 0 and 100 ms before entering the bank, teller-manager interaction for a withdrawal takes 5 to 30 ms, and the transaction in the safe takes 10 to 50 ms. Moreover, I made sure to note that blocking actions need output both before and after the wait, and that shared resource access like the manager and safe should have three messages: going there, using it, and finishing with it.
 
 especially, I followed the project suggestion of starting small and testing with fewer threads first before scaling up. That makes it easier to catch synchronization mistakes before running the full 50-customer version. eventually, once the smaller version works, the final step is to run the complete simulation, verify that all customers are served, and make sure the bank closes only after all 50 customers have left.
+
+## Date and time: 10:40 PM 4/17/2026
+### Session 4: Add README file
